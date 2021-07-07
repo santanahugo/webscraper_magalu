@@ -1,0 +1,3 @@
+- Paginação
+- Produtos patrocinados
+- get info
