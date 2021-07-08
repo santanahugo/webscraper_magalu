@@ -4,6 +4,7 @@ from selenium.webdriver.common.keys import Keys
 import requests
 from datetime import datetime
 import pandas as pd
+import json
 
 category_urls = [
     'https://www.magazineluiza.com.br/acessorios-de-tecnologia/l/ia/',
@@ -60,6 +61,7 @@ for category_url in category_urls:
     # Navigate subcategories
     #sub_urls = []
     for s in subs:
+        subcat_alias = s['data-filter-value']
         tmp = s.find('a')
         href = tmp['href']
         #sub_urls.append([category_url, base_url + href])
@@ -74,9 +76,11 @@ for category_url in category_urls:
         last_page = int(soup.find_all(attrs={'class': 'css-1a9p55p'})[-2].text)
         pages = list(range(1, last_page + 1))
         current_page = 1
-        j = 1
+        #j = 1
         results = []
         fails = []
+        i = 0
+        k = 0
         while current_page <= last_page:
             main_products_list = subcat_soup.find('ul', attrs={'role': 'main'})
             main_products = [x['href'] for x in main_products_list.find_all(attrs={'name': 'linkToProduct'})]
@@ -86,10 +90,32 @@ for category_url in category_urls:
                 except:
                     s = requests.Session()
                     new_req = BeautifulSoup(s.get(product).content, 'html.parser')
+                #print('Product: ', product)
+                #print(new_req)
+                p = json.loads(new_req.find(attrs={'class': 'header-product js-header-product'})['data-product'])
+                #print(p)
                 seller = new_req.find('button', 'seller-info-button js-seller-modal-button')
                 try:
+                    #Execution info
                     now = datetime.now()
                     date = now.date()
+                    #Product info
+                    sku = p['sku']
+                    product_id = p['id_product']
+                    full_title = p['fullTitle']
+                    path = p['variationPath']
+                    quantity_sellers = p['quantitySellers']
+                    category_id = p['categoryId']
+                    subcategory = p['urlSubcategories']
+                    best_price = p['bestPriceTemplate']
+                    installment_quantity = p['installmentQuantity']
+                    buy_together_image = p['buyTogetherImage']
+                    thumbnail = p['thumbailBuyTogether']
+                    list_price = p['listPrice']
+                    installment_amount = p['installmentAmount']
+                    price_template = p['priceTemplate']
+                    p_seller = p['seller']
+                    #Company info
                     nome_fantasia = seller['data-seller-description']
                     seller_url = seller['data-seller-page']
                     city = seller['data-seller-city']
@@ -100,25 +126,41 @@ for category_url in category_urls:
                     neighborhood = seller['data-seller-neighborhood']
                     cnpj = seller['data-seller-cnpj']
                     cep = seller['data-seller-zipcode']
-                    results.append([now, date, cat_name, subcat_name, current_page, nome_fantasia, razao_social, cnpj, seller_url, city, state, street, number, neighborhood, cep])
+                    results.append([now, date, cat_name, subcat_name, current_page, nome_fantasia,
+                                    razao_social, cnpj, seller_url, city, state, street, number, neighborhood, cep,
+                                    sku, product_id, full_title, path, quantity_sellers, category_id, subcategory,
+                                    best_price, installment_quantity, buy_together_image, thumbnail, list_price,
+                                    installment_amount, price_template, p_seller
+                                    ])
                     if len(results) >= 50:
                         #Save batch in pkl file
-                        df = pd.DataFrame(results, columns = ['now','date', 'category', 'subcategory', 'page','nome_fantasia','razao_social','cnpj',
-                                                              'seller_url', 'city', 'state', 'street', 'number', 'neighborhood', 'cep'])
-                        df.to_pickle(f'data/{j}_{date}.pkl')
+                        df = pd.DataFrame(results, columns=['now','date', 'category', 'subcategory', 'page','nome_fantasia','razao_social','cnpj',
+                                                              'seller_url', 'city', 'state', 'street', 'number', 'neighborhood', 'cep',
+                                                              'sku', 'product_id', 'full_title', 'path', 'quantity_sellers',
+                                                              'category_id', 'subcategory',
+                                                              'best_price', 'installment_quantity', 'buy_together_image',
+                                                              'thumbnail', 'list_price',
+                                                              'installment_amount', 'price_template', 'p_seller'
+                                                              ])
+                        df.to_pickle(f'data/{subcat_alias}_{i}_{date}.pkl')
+                        i += 1
                         results = []
-                        print(now, current_page, nome_fantasia, seller_url, city, state, razao_social, street, number,
-                              neighborhood, cnpj, cep)
+                        print(now, date, cat_name, subcat_name, current_page, nome_fantasia,
+                                razao_social, cnpj, seller_url, city, state, street, number, neighborhood, cep,
+                                sku, product_id, full_title, path, quantity_sellers, category_id, subcategory,
+                                best_price, installment_quantity, buy_together_image, thumbnail, list_price,
+                                installment_amount, price_template, p_seller)
                 except:
                     # Validate
-                    print('Vendido por Magalu')
+                    #print('Vendido por Magalu')
                     # Save urls where seller not found for post-mortem analysis
                     fails.append(product)
                     if len(fails) >= 50:
                         df_fails = pd.DataFrame(fails, columns=['product'])
-                        df_fails.to_pickle(f'fails/fail_{j}_{date}.pkl')
+                        df_fails.to_pickle(f'fails/fail_{subcat_alias}_{k}_{date}.pkl')
+                        k += 1
                         fails = []
-                j += 1
+                #j += 1
             # Next page
             current_page += 1
             url = f'https://www.magazineluiza.com.br/monitor-gamer/informatica/s/in/mogm/?page={current_page}'
