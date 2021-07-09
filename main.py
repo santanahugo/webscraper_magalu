@@ -5,6 +5,7 @@ import requests
 from datetime import datetime
 import pandas as pd
 import json
+import time
 
 category_urls = [
     'https://www.magazineluiza.com.br/acessorios-de-tecnologia/l/ia/',
@@ -44,6 +45,7 @@ category_urls = [
 
 base_url = 'https://www.magazineluiza.com.br'
 s = requests.Session()
+product_set = set()
 
 for category_url in category_urls:
     cat_name = category_url.split('/')[3]
@@ -52,8 +54,16 @@ for category_url in category_urls:
     try:
         r = s.get(category_url).content
     except:
-        s = requests.Session()
-        r = s.get(category_url).content
+        retries = 0
+        while retries < 3:
+            try:
+                s = requests.Session()
+                r = s.get(category_url).content
+                break
+            except:
+                time.sleep(300)
+            retries += 1
+
 
     # Find subcategories
     soup = BeautifulSoup(r, 'html.parser')
@@ -65,108 +75,152 @@ for category_url in category_urls:
         tmp = s.find('a')
         href = tmp['href']
         #sub_urls.append([category_url, base_url + href])
-        sub_url = base_url + href
+        url = base_url + href
         subcat_name = tmp.text
+        print('New Sub: ', subcat_name)
+        #print(subcat_name)
+        sub_req = None
         try:
-            sub_req = s.get(sub_url).content
+            sub_req = s.get(url).content
         except:
-            s = requests.Session()
-            sub_req = s.get(sub_url).content
+            retries = 0
+            while retries < 3:
+                try:
+                    s = requests.Session()
+                    sub_req = s.get(url).content
+                    break
+                except:
+                    time.sleep(300)
+                retries += 1
         subcat_soup = BeautifulSoup(sub_req, 'html.parser')
-        last_page = int(soup.find_all(attrs={'class': 'css-1a9p55p'})[-2].text)
+        last_page = int(subcat_soup.find_all(attrs={'class': 'css-1a9p55p'})[-2].text)
         pages = list(range(1, last_page + 1))
         current_page = 1
-        #j = 1
         results = []
         fails = []
         i = 0
         k = 0
         while current_page <= last_page:
-            main_products_list = subcat_soup.find('ul', attrs={'role': 'main'})
-            main_products = [x['href'] for x in main_products_list.find_all(attrs={'name': 'linkToProduct'})]
-            for product in main_products:
-                try:
-                    new_req = BeautifulSoup(s.get(product).content, 'html.parser')
-                except:
-                    s = requests.Session()
-                    new_req = BeautifulSoup(s.get(product).content, 'html.parser')
-                #print('Product: ', product)
-                #print(new_req)
-                p = json.loads(new_req.find(attrs={'class': 'header-product js-header-product'})['data-product'])
-                #print(p)
-                seller = new_req.find('button', 'seller-info-button js-seller-modal-button')
-                try:
-                    #Execution info
-                    now = datetime.now()
-                    date = now.date()
-                    #Product info
-                    sku = p['sku']
-                    product_id = p['id_product']
-                    full_title = p['fullTitle']
-                    path = p['variationPath']
-                    quantity_sellers = p['quantitySellers']
-                    category_id = p['categoryId']
-                    subcategory = p['urlSubcategories']
-                    best_price = p['bestPriceTemplate']
-                    installment_quantity = p['installmentQuantity']
-                    buy_together_image = p['buyTogetherImage']
-                    thumbnail = p['thumbailBuyTogether']
-                    list_price = p['listPrice']
-                    installment_amount = p['installmentAmount']
-                    price_template = p['priceTemplate']
-                    p_seller = p['seller']
-                    #Company info
-                    nome_fantasia = seller['data-seller-description']
-                    seller_url = seller['data-seller-page']
-                    city = seller['data-seller-city']
-                    state = seller['data-seller-state']
-                    razao_social = seller['data-seller-razao-social']
-                    street = seller['data-seller-street']
-                    number = seller['data-seller-number']
-                    neighborhood = seller['data-seller-neighborhood']
-                    cnpj = seller['data-seller-cnpj']
-                    cep = seller['data-seller-zipcode']
-                    results.append([now, date, cat_name, subcat_name, current_page, nome_fantasia,
+            retries = 0
+            while retries < 3:
+                main_products_list = subcat_soup.find('ul', attrs={'role': 'main'})
+                if main_products_list is not None:
+                    break
+                retries += 1
+            if main_products_list is not None:
+                main_products = [x['href'] for x in main_products_list.find_all(attrs={'name': 'linkToProduct'})]
+                for product in main_products:
+                    if product in product_set:
+                        print('Produto já foi incluido no scraping: ', product)
+                        continue
+                    product_set.add(product)
+                    print('Número de SKUs coletados: ', len(product_set))
+                    try:
+                        new_req = BeautifulSoup(s.get(product).content, 'html.parser')
+                    except:
+                        retries = 0
+                        while retries < 3:
+                            try:
+                                s = requests.Session()
+                                new_req = BeautifulSoup(s.get(product).content, 'html.parser')
+                                break
+                            except:
+                                time.sleep(300)
+                            retries += 1
+
+                    print('Subcat: ', subcat_name, 'Page: ', current_page, '\nURL: ', url,
+                          '\nProduct: ', product)
+                    #print(new_req)
+                    retries = 0
+                    p = None
+                    seller = None
+                    while retries < 3:
+                        try:
+                            p = json.loads(new_req.find(attrs={'class': 'header-product js-header-product'})['data-product'])
+                            seller = new_req.find('button', 'seller-info-button js-seller-modal-button')
+                            break
+                        except:
+                            retries += 1
+                    try:
+                        #Execution info
+                        now = datetime.now()
+                        date = now.date()
+                        #Product info
+                        sku = p['sku']
+                        product_id = p['id_product']
+                        full_title = p['fullTitle']
+                        path = p['variationPath']
+                        quantity_sellers = p['quantitySellers']
+                        category_id = p['categoryId']
+                        subcategory = p['urlSubcategories']
+                        best_price = p['bestPriceTemplate']
+                        installment_quantity = p['installmentQuantity']
+                        buy_together_image = p['buyTogetherImage']
+                        thumbnail = p['thumbailBuyTogether']
+                        list_price = p['listPrice']
+                        installment_amount = p['installmentAmount']
+                        price_template = p['priceTemplate']
+                        p_seller = p['seller']
+                        #Company info
+                        nome_fantasia = seller['data-seller-description']
+                        seller_url = seller['data-seller-page']
+                        city = seller['data-seller-city']
+                        state = seller['data-seller-state']
+                        razao_social = seller['data-seller-razao-social']
+                        street = seller['data-seller-street']
+                        number = seller['data-seller-number']
+                        neighborhood = seller['data-seller-neighborhood']
+                        cnpj = seller['data-seller-cnpj']
+                        cep = seller['data-seller-zipcode']
+                        results.append([now, date, cat_name, subcat_name, current_page, nome_fantasia,
+                                        razao_social, cnpj, seller_url, city, state, street, number, neighborhood, cep,
+                                        sku, product_id, full_title, path, quantity_sellers, category_id, subcategory,
+                                        best_price, installment_quantity, buy_together_image, thumbnail, list_price,
+                                        installment_amount, price_template, p_seller
+                                        ])
+                        if len(results) >= 50:
+                            #Save batch in pkl file
+                            df = pd.DataFrame(results, columns=['now','date', 'category', 'subcategory', 'page','nome_fantasia','razao_social','cnpj',
+                                                                  'seller_url', 'city', 'state', 'street', 'number', 'neighborhood', 'cep',
+                                                                  'sku', 'product_id', 'full_title', 'path', 'quantity_sellers',
+                                                                  'category_id', 'subcategory',
+                                                                  'best_price', 'installment_quantity', 'buy_together_image',
+                                                                  'thumbnail', 'list_price',
+                                                                  'installment_amount', 'price_template', 'p_seller'
+                                                                  ])
+                            df.to_pickle(f'data/{cat_name}_{subcat_alias}_{i}_{date}.pkl')
+                            i += 1
+                            results = []
+                            print(now, date, cat_name, subcat_name, current_page, nome_fantasia,
                                     razao_social, cnpj, seller_url, city, state, street, number, neighborhood, cep,
                                     sku, product_id, full_title, path, quantity_sellers, category_id, subcategory,
                                     best_price, installment_quantity, buy_together_image, thumbnail, list_price,
-                                    installment_amount, price_template, p_seller
-                                    ])
-                    if len(results) >= 50:
-                        #Save batch in pkl file
-                        df = pd.DataFrame(results, columns=['now','date', 'category', 'subcategory', 'page','nome_fantasia','razao_social','cnpj',
-                                                              'seller_url', 'city', 'state', 'street', 'number', 'neighborhood', 'cep',
-                                                              'sku', 'product_id', 'full_title', 'path', 'quantity_sellers',
-                                                              'category_id', 'subcategory',
-                                                              'best_price', 'installment_quantity', 'buy_together_image',
-                                                              'thumbnail', 'list_price',
-                                                              'installment_amount', 'price_template', 'p_seller'
-                                                              ])
-                        df.to_pickle(f'data/{subcat_alias}_{i}_{date}.pkl')
-                        i += 1
-                        results = []
-                        print(now, date, cat_name, subcat_name, current_page, nome_fantasia,
-                                razao_social, cnpj, seller_url, city, state, street, number, neighborhood, cep,
-                                sku, product_id, full_title, path, quantity_sellers, category_id, subcategory,
-                                best_price, installment_quantity, buy_together_image, thumbnail, list_price,
-                                installment_amount, price_template, p_seller)
-                except:
-                    # Validate
-                    #print('Vendido por Magalu')
-                    # Save urls where seller not found for post-mortem analysis
-                    fails.append(product)
-                    if len(fails) >= 50:
-                        df_fails = pd.DataFrame(fails, columns=['product'])
-                        df_fails.to_pickle(f'fails/fail_{subcat_alias}_{k}_{date}.pkl')
-                        k += 1
-                        fails = []
-                #j += 1
+                                    installment_amount, price_template, p_seller)
+                    except:
+                        # Validate
+                        #print('Vendido por Magalu')
+                        # Save urls where seller not found for post-mortem analysis
+                        fails.append(product)
+                        if len(fails) >= 50:
+                            df_fails = pd.DataFrame(fails, columns=['product'])
+                            df_fails.to_pickle(f'fails/fail_{cat_name}_{subcat_alias}_{k}_{date}.pkl')
+                            k += 1
+                            fails = []
+                    #j += 1
             # Next page
             current_page += 1
-            url = f'https://www.magazineluiza.com.br/monitor-gamer/informatica/s/in/mogm/?page={current_page}'
+            url = base_url + href + f'?page={current_page}'
             try:
                 sub_req = s.get(url).content
             except:
-                s = requests.Session()
-                sub_req = s.get(url).content
+                retries = 0
+                while retries < 3:
+                    try:
+                        s = requests.Session()
+                        sub_req = s.get(url).content
+                        break
+                    except:
+                        time.sleep(300)
+                    retries += 1
+
             subcat_soup = BeautifulSoup(sub_req, 'html.parser')
