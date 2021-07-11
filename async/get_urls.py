@@ -96,7 +96,7 @@ for category_url in category_urls:
                 retries += 1
         subcat_soup = BeautifulSoup(sub_req, 'html.parser')
         last_page = int(subcat_soup.find_all(attrs={'class': 'css-1a9p55p'})[-2].text)
-        results.append([url, last_page])
+        results.append([url, last_page, cat_name, subcat_alias])
 
 then = datetime.now()
 print('tempo: ', (then-now).seconds)

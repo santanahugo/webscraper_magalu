@@ -12,7 +12,7 @@ import pickle
 from bs4 import BeautifulSoup
 import os
 
-async def get_product_info(product_url, session):
+async def get_product_info(product_url, session, cat_name, subcat_name):
     prod_resp = await session.get(product_url)
     prod_text = await prod_resp.read()
     prod_req = BeautifulSoup(prod_text, 'html.parser')
@@ -53,13 +53,13 @@ async def get_product_info(product_url, session):
         #                sku, product_id, full_title, path, quantity_sellers, category_id, subcategory,
         #                best_price, installment_quantity, buy_together_image, thumbnail, list_price,
         #                installment_amount, price_template, p_seller)
-        results = [now, date, nome_fantasia,
+        results = [now, date, cat_name, subcat_name, nome_fantasia,
                         razao_social, cnpj, seller_url, city, state, street, number, neighborhood, cep,
                         sku, product_id, full_title, path, quantity_sellers, category_id, subcategory,
                         best_price, installment_quantity, buy_together_image, thumbnail, list_price,
                         installment_amount, price_template, p_seller
                         ]
-        name = product_url.split('/')[3]
+        name = cat_name + '_' + subcat_name + '_' + sku
         with open(name, 'wb') as f:
             pickle.dump(results, f)
     except:
@@ -68,7 +68,7 @@ async def get_product_info(product_url, session):
             pickle.dump(product_url, f)
 
 
-async def get_subcat_page(url, session):
+async def get_subcat_page(url, session, cat_name, subcat_name):
     async with semaphore:
         resp = await session.get(url=url)
         text = await resp.read()
@@ -85,7 +85,7 @@ async def get_subcat_page(url, session):
         tasks = []
         for product_url in main_products:
             print(product_url)
-            tasks.append(get_product_info(session=session, product_url=product_url))
+            tasks.append(get_product_info(session=session, product_url=product_url, cat_name=cat_name, subcat_name=subcat_name))
         htmls = await asyncio.gather(*tasks, return_exceptions=True)
         return htmls
 
@@ -96,7 +96,7 @@ async def main(urls):
     async with aiohttp.ClientSession() as session:
         tasks = []
         for url in urls:
-            tasks.append(get_subcat_page(session=session, url=url))
+            tasks.append(get_subcat_page(session=session, url=url[0], cat_name=url[1], subcat_name=url[2]))
         # asyncio.gather() will wait on the entire task set to be
         # completed.  If you want to process results greedily as they come in,
         # loop over asyncio.as_completed()
@@ -111,9 +111,11 @@ if __name__ == '__main__':
     for item in initial_urls:
         last_page = item[1]
         subcat_url = item[0]
+        cat_name = item[2]
+        subcat_name = item[3]
         pages = list(range(1, last_page + 1))
         for page in pages:
-            page_urls.append(subcat_url + f'?page={page}')
+            page_urls.append([subcat_url + f'?page={page}', cat_name, subcat_name])
     # Page urls - OK
     print(len(page_urls))
     now = datetime.now()
@@ -121,6 +123,6 @@ if __name__ == '__main__':
     os.chdir('data')
     semaphore = asyncio.Semaphore(32)
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(page_urls[:2]))
+    loop.run_until_complete(main(page_urls))
     then = datetime.now()
     print(then)
